@@ -1,0 +1,33 @@
+[project]
+name = "tg3"
+version = "0.0.1"
+description = "Robot learning suite for tactile robotics"
+readme = "README.md"
+requires-python = "==3.8.*"
+dependencies = [
+    "common-robot-interface>=0.5.3",
+    "hyperopt",
+    "matplotlib",
+    "numpy",
+    "opensimplex==0.3",
+    "opencv-python>=4.5.1",
+    "opencv-python>=4.11.0",
+    "wheel==0.38.4",
+    "pandas",
+    "pytorch_model_summary",
+    "pybullet==3.2.7",
+    "pybullet>=3.1.0",
+    "scikit-learn",
+    "scikit-image>=0.19.3",
+    "scipy>=1.9.1",
+    "seaborn",
+    "six",
+    "stable_baselines3==1.2.1a0",
+    "tensorboard",
+    "tqdm",
+    "vit-pytorch",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

@@ -1,0 +1,37 @@
+name: Script Tests
+on:
+  push:
+    branches:
+      - main
+    
+jobs:
+  scripts:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: "latest"
+
+      # The script tries to connect to a running X server, so we need to set up xvfb to
+      # give us a fake display so that the script can run headlessly.
+      - name: Run script tests
+        uses: coactions/setup-xvfb@v1
+        with:
+          run: 
+            uv run python tg3/data/launch_collect.py -r sim -s tactip -e edge_yRz -dd data -n 100
+
+      - name: Archive sensor image
+        uses: actions/upload-artifact@v4
+        with:
+          name: Sensor image
+          path: tactile_data/sim_tactip/edge_yRz/data/sensor_images/image_1.png
+
+      - name: Archive processed image
+        uses: actions/upload-artifact@v4
+        with:
+          name: Processed image
+          path: tactile_data/sim_tactip/edge_yRz/data/processed_images/image_1.png
