@@ -71,7 +71,7 @@ def setup_environment(target_indicator, sensor_type):
         'left': {
             'type': 'standard_tactip',
             'core': 'fixed',
-            'dynamics': {'stiffness': 300, 'damping': 10, 'friction': 10},
+            'dynamics': {'stiffness': 60, 'damping': 2.3, 'friction': 2.3},
             'image_size': [128, 128],
             'turn_off_border': True,
             'show_tactile': True,
@@ -84,7 +84,7 @@ def setup_environment(target_indicator, sensor_type):
         'right': {
             'type': 'standard_tactip',
             'core': 'fixed',
-            'dynamics': {'stiffness': 300, 'damping': 10, 'friction': 10},
+            'dynamics': {'stiffness': 60, 'damping': 2.3, 'friction': 2.3},
             'image_size': [128, 128],
             'turn_off_border': True,
             'show_tactile': True,
@@ -196,14 +196,26 @@ def tactile_pushing(args):
     embodiment = sensor.embodiment
     # 先把夹爪打开
     # open_gripper(pb, embodiment, angle=0.45)
-    emb = sensor.embodiment
-    drive_gripper(pb, emb, angle_rad=0.35, use_motors=False)   # <<< 用工具函数，严格按 mimic 符号
+    # emb = sensor.embodiment
+    # drive_gripper(pb, emb, angle_rad=0.35, use_motors=False)   # <<< 用工具函数，严格按 mimic 符号
     # if not hasattr(p, "COV_ENABLE_COLLISION_SHAPES"):
     #     p.COV_ENABLE_COLLISION_SHAPES = 6  # 官方源码里这个值就是 6
     # p.configureDebugVisualizer(p.COV_ENABLE_COLLISION_SHAPES, 1, physicsClientId=pb._client)
     # open_gripper(pb, embodiment, angle=0.7)
+    #加了这一段之后就没有发生卡顿了
+    pb.setPhysicsEngineParameter(
+        numSolverIterations=60,  # 迭代次数 ↑
+        numSubSteps=4,  # 子步 ↑
+        fixedTimeStep=1.0 / 240.0,  # 固定步长
+        contactERP=0.2,  # 接触误差修正
+        erp=0.2
+    )
     robot.move_linear(np.array([0, 0, 0, 0, 0, 0]))
-    spawn_stim_between_fingers(pb, embodiment, stim_name="cube", z_offset=0.005, use_tactip_tip=True)
+
+    # 初始化后：断掉了手指间的碰撞
+    # disable_gripper_self_collision(pb, embodiment)
+
+    spawn_stim_between_fingers(pb, embodiment, stim_name="long_edge_flat", z_offset=0.000, use_tactip_tip=True)
 
     # robot.move_linear(np.array([0, -100, 0, 0, 0, 0]))
 
@@ -262,13 +274,18 @@ def tactile_pushing(args):
         #
         #     time.sleep(1.0 / 240.0)
 
-        debug_tip_frames(pb, emb)
+        # debug_tip_frames(pb, emb)
 
         tactile_image_l, tactile_image_r = sensor.process()
 
         pred_pose_l = pose_model.predict(tactile_image_l)[:6]
         pred_pose_r = pose_model.predict(tactile_image_r)[:6]
         print(f'left pred {pred_pose_l}, \n right pred {pred_pose_r}')
+        # 调试时看看还有谁在撞：
+        print('\n contacts')
+        # print_self_contacts(pb, embodiment.arm.embodiment_id, embodiment.arm.link_name_to_index)
+        print_robot_external_contacts(pb, embodiment.arm.embodiment_id, embodiment.arm.link_name_to_index)
+
         try:
             sensor_left = sensor.tactile_sensors['left']
             sensor_right = sensor.tactile_sensors['right']
@@ -356,17 +373,17 @@ def spawn_stim_between_fingers(pb, embodiment, stim_name="cube", z_offset=0.0, u
     r_pos = np.array(r_pos)
     mid = (l_pos + r_pos) / 2.0
     mid[2] += z_offset  # 需要高一点就给正值，比如 0.005
-    # mid[0] -= 0.012
-    # mid[1] -= 0.015
+    mid[0] -= 0.012
+    mid[1] -= 0.015
     # 物体URDF路径（项目内置 stimuli）
-    stim_urdf = add_assets_path(r"H:\tactile-gym-3-bowen\tg3\simulator\stimuli\cube\cube.urdf")
+    stim_urdf = add_assets_path(r"H:\tactile-gym-3-bowen\tg3\simulator\stimuli\long_edge_flat\long_edge.urdf")
 
     # 加载在中点处；orientation 给单位四元数即可（小物块不重要）
     mid = np.asarray(mid, dtype=float)  # 确保是 float
-    stim_rpy = np.array([0.0, 0, 0.0], dtype=float)  # 先用水平姿态
+    stim_rpy = np.array([0.0, 1.57, 0.0], dtype=float)  # 先用水平姿态
     stim_pose6 = np.concatenate([mid, stim_rpy])  # 6 维: 位置 + 姿态
 
-    load_stim(pb, stim_urdf, stim_pose6, fixed_base=False, enable_collision=True, scale=0.35)
+    load_stim(pb, stim_urdf, stim_pose6, fixed_base=False, enable_collision=True, scale=0.747)
     print(f"[INFO] Spawned {stim_name} at", mid.tolist())
 
 # def open_gripper(pb, embodiment, angle=0.45):
@@ -388,181 +405,82 @@ def spawn_stim_between_fingers(pb, embodiment, stim_name="cube", z_offset=0.0, u
 #     setj('right_inner_finger_joint',  +angle)   # multiplier = +1
 #     setj('right_outer_knuckle_joint', -angle)   # multiplier = -1
 
-def set_gripper_angle(pb, embodiment, angle_rad):
-    """
-    直接用角度控制 Robotiq 85 张开/闭合（弧度，0=闭合，正数=张开）。
-    我们显式设置所有受 mimic 关系约束的关节，避免 PyBullet 不同版本的差异。
-    """
-    eid  = embodiment.arm.embodiment_id
-    jmap = embodiment.arm.joint_name_to_index
-
-    # 读取 finger_joint 的上下限，做一下限幅
-    if 'finger_joint' in jmap:
-        ji = pb.getJointInfo(eid, jmap['finger_joint'])
-        lower, upper = ji[8], ji[9]     # joint limits from URDF
-        a = float(max(lower, min(upper, angle_rad)))
-    else:
-        a = float(angle_rad)
-
-    # 目标角（和你 URDF mimic 完全一致的符号）
-    targets = {
-        'finger_joint'               : +a,   # master：左外侧摆动
-        'left_inner_knuckle_joint'   : +a,
-        'left_inner_finger_joint'    : -a,
-        'right_inner_knuckle_joint'  : -a,
-        'right_inner_finger_joint'   : +a,
-        'right_outer_knuckle_joint'  : -a,
-        # 说明：left_outer_finger_joint / right_outer_finger_joint 是 fixed，不需要设
-    }
-
-    # 先瞬时复位到位（避免初始姿态龟速追随）
-    for name, val in targets.items():
-        if name in jmap:
-            pb.resetJointState(eid, jmap[name], val)
-
-    # 再用 POSITION_CONTROL 持续施力到位，防止动力学又把它“带跑”
-    for name, val in targets.items():
-        if name in jmap:
-            pb.setJointMotorControl2(
-                bodyUniqueId=eid,
-                jointIndex=jmap[name],
-                controlMode=pb.POSITION_CONTROL,
-                targetPosition=val,
-                force=200,              # 够用的力
-                maxVelocity=1.5,
-            )
-
-def open_gripper(pb, embodiment, angle=0.45):
-    set_gripper_angle(pb, embodiment, angle)
-
-def close_gripper(pb, embodiment):
-    set_gripper_angle(pb, embodiment, 0.0)
 
 
-#调试
-# ---- 调试：打印关节表（可选）----
-def print_joint_table(pb, body_id):
-    n = pb.getNumJoints(body_id)
-    print("\n[Joints]")
-    for i in range(n):
-        ji = pb.getJointInfo(body_id, i)
-        name = ji[1].decode()
-        parent = ji[16]
-        jtype = ji[2]
-        lo, hi = ji[8], ji[9]
-        print(f"{i:2d}: {name:30s} type={jtype} parent={parent:2d} limits=({lo:.3f},{hi:.3f})")
 
-# ---- 调试：读取五个“手指”关节角度 + 左右 tip 的世界位姿 ----
-def snapshot_gripper(pb, emb):
-    eid  = emb.arm.embodiment_id
-    jidx = emb.arm.joint_name_to_index
 
-    names = [
-        'finger_joint',
-        'left_inner_knuckle_joint', 'left_inner_finger_joint',
-        'right_inner_knuckle_joint','right_inner_finger_joint',
-        'right_outer_knuckle_joint'
-    ]
-    print("\n[Gripper joint states]")
-    for n in names:
-        if n in jidx:
-            pos = pb.getJointState(eid, jidx[n])[0]
-            print(f"  {n:28s} = {pos:+.4f} rad")
-        else:
-            print(f"  {n:28s} <missing>")
-
-    L = emb.arm.link_name_to_index['left_tactip_tip_link']
-    R = emb.arm.link_name_to_index['right_tactip_tip_link']
-    pL, oL, *_ = pb.getLinkState(eid, L, computeForwardKinematics=True)
-    pR, oR, *_ = pb.getLinkState(eid, R, computeForwardKinematics=True)
-    eL = pb.getEulerFromQuaternion(oL)
-    eR = pb.getEulerFromQuaternion(oR)
-    print(f"[Tip L] pos={np.array(pL)} eul={np.array(eL)}")
-    print(f"[Tip R] pos={np.array(pR)} eul={np.array(eR)}")
-    print(f"Δz (L-R) = {pL[2]-pR[2]:+.5f} m")
-
-# ---- 张合：严格按 mimic 符号驱动 ----
-def drive_gripper(pb, emb, angle_rad=0.40, use_motors=False):
-    """
-    angle_rad 相当于 URDF 的 finger_joint。
-    use_motors=True 用 POSITION_CONTROL，False 直接 resetJointState（调试快）。
-    """
-    eid  = emb.arm.embodiment_id
-    jidx = emb.arm.joint_name_to_index
-
-    # 目标角度（遵循你的 URDF mimic）
-    targets = {
-        'finger_joint':              angle_rad,
-        'left_inner_knuckle_joint':  +angle_rad,   # mimic +1
-        'left_inner_finger_joint':   -angle_rad,   # mimic -1
-        'right_inner_knuckle_joint': -angle_rad,   # mimic -1
-        'right_inner_finger_joint':  +angle_rad,   # mimic +1
-        'right_outer_knuckle_joint': -angle_rad,   # mimic -1
-    }
-
-    for name, val in targets.items():
-        if name not in jidx:
+def print_self_contacts(pb, body_id, link_name_to_index):
+    cps = pb.getContactPoints(bodyA=body_id, bodyB=body_id)
+    rev = {v:k for k,v in link_name_to_index.items()}
+    seen = set()
+    for c in cps:
+        a = rev.get(c[3], c[3]); b = rev.get(c[4], c[4])  # link names
+        pair = tuple(sorted([a,b]))
+        if pair in seen:
             continue
-        jid = jidx[name]
-        if use_motors:
-            pb.setJointMotorControl2(eid, jid, pb.POSITION_CONTROL, targetPosition=val, force=1000)
-        else:
-            pb.resetJointState(eid, jid, val)
+        seen.add(pair)
+        print(f"[self-collide] {pair}  normalF={c[9]:.3f}  dist={c[8]:.5f}")
+def disable_gripper_self_collision(pb, emb):
+    bid  = emb.arm.embodiment_id
+    L    = emb.arm.link_name_to_index
 
-    # 简单可视化：画 tip 坐标轴
-    L = emb.arm.link_name_to_index['left_tactip_tip_link']
-    R = emb.arm.link_name_to_index['right_tactip_tip_link']
-    from tg3.simulator.utils.pybullet_draw_utils import draw_link_frame
-    draw_link_frame(eid, L, lifetime=0.3)
-    draw_link_frame(eid, R, lifetime=0.3)
+    def off(a, b):
+        pb.setCollisionFilterPair(bid, bid, L[a], L[b], enableCollision=0)
 
-# ---- 校验“传感器安装是否镜像一致”（比较 left/right inner_finger -> tip 的相对位姿）----
-def check_mount_symmetry(pb, emb):
-    eid  = emb.arm.embodiment_id
-    Lf   = emb.arm.link_name_to_index['left_inner_finger']
-    Rf   = emb.arm.link_name_to_index['right_inner_finger']
-    Lt   = emb.arm.link_name_to_index['left_tactip_tip_link']
-    Rt   = emb.arm.link_name_to_index['right_tactip_tip_link']
+    # Robotiq85 常见会互撞的对（按你的 URDF 名称）
+    pairs = [
+        # 左手指内部互撞
+        ("left_inner_finger",  "left_outer_finger"),
+        ("left_inner_knuckle", "left_outer_knuckle"),
+        # 右手指内部互撞
+        ("right_inner_finger",  "right_outer_finger"),
+        ("right_inner_knuckle", "right_outer_knuckle"),
+        # 手指与指套/传感器外壳
+        ("left_inner_finger",  "left_tactip_body_link"),
+        ("right_inner_finger", "right_tactip_body_link"),
+        # 如有需要再加：外指与指套
+        ("left_outer_finger",  "left_tactip_body_link"),
+        ("right_outer_finger", "right_tactip_body_link"),
+    ]
+    for a,b in pairs:
+        if a in L and b in L:
+            off(a,b)
+    # for side in ("left", "right"):
+    #     for finger in ("inner_finger", "outer_finger", "inner_knuckle", "outer_knuckle"):
+    #         pb.setCollisionFilterPair(
+    #             emb.arm.embodiment_id, emb.arm.embodiment_id,
+    #             L[f"{side}_tactip_body_link"], L[f"{side}_{finger}"], 0
+    #         )
+def print_robot_external_contacts(pb, robot_id, link_name_to_index, min_normF=1e-6):
+    cps = pb.getContactPoints(bodyA=robot_id)  # bodyB 不设，表示与任何 B 的接触
+    rev = {v:k for k,v in link_name_to_index.items()}
 
-    def world_pose(link):
-        p,o,*_ = pb.getLinkState(eid, link, computeForwardKinematics=True)
-        R = np.array(pb.getMatrixFromQuaternion(o)).reshape(3,3)
-        return np.array(p), R
+    # 收敛信息
+    if not cps:
+        print("[contacts] none")
+        return
 
-    pLf,RLf = world_pose(Lf); pLt,RLt = world_pose(Lt)
-    pRf,RRf = world_pose(Rf); pRt,RRt = world_pose(Rt)
+    # 汇总并仅打印力较大的若干条
+    rows = []
+    for c in cps:
+        linkA = rev.get(c[3], c[3])   # 机器人侧link
+        bodyB = c[1] if c[1] != robot_id else c[2]   # 另一侧 bodyUniqueId
+        linkB = c[4]
+        Fn    = float(c[9])
+        dist  = float(c[8])
+        if Fn < min_normF:
+            continue
+        rows.append((linkA, bodyB, linkB, Fn, dist, c[5], c[6]))  # 名称、力、距离、接触点等
 
-    # finger->tip 的相对变换 t_rel = R_f^T (p_tip - p_f),  R_rel = R_f^T R_tip
-    tL = RLf.T @ (pLt - pLf)
-    RL = RLf.T @ RLt
-    tR = RRf.T @ (pRt - pRf)
-    RR = RRf.T @ RRt
+    if not rows:
+        print("[contacts] only tiny forces (< min_normF)")
+        return
 
-    def euler_of(R):
-        # 简单 ZYX euler 近似
-        yaw   = np.arctan2(R[1,0], R[0,0])
-        pitch = np.arcsin(-R[2,0])
-        roll  = np.arctan2(R[2,1], R[2,2])
-        return np.array([roll, pitch, yaw])
-
-    print("\n[Mount symmetry check] finger->tip (local)")
-    print(f"  Left  t={tL}  rpy={euler_of(RL)}")
-    print(f"  Right t={tR}  rpy={euler_of(RR)}")
-    print(f"  Δt = {tL - tR},  Δrpy = {euler_of(RL) - euler_of(RR)}")
-
-def debug_tip_frames(pb, emb):
-    lm = emb.arm.link_name_to_index
-    for side in ("left", "right"):
-        lid = lm[f"{side}_tactip_tip_link"]
-        pos, orn, *_ = pb.getLinkState(emb.arm.embodiment_id, lid, computeForwardKinematics=True)
-        R = np.array(pb.getMatrixFromQuaternion(orn)).reshape(3,3)
-        x,y,z = R[:,0], R[:,1], R[:,2]
-        print(f"[{side}] tip pos={np.array(pos)}  z-axis(world)={z}")
-
-        # 画出局部坐标轴
-        pb.addUserDebugLine(pos, (np.array(pos)+0.03*x).tolist(), [1,0,0], 2, 0.5)
-        pb.addUserDebugLine(pos, (np.array(pos)+0.03*y).tolist(), [0,1,0], 2, 0.5)
-        pb.addUserDebugLine(pos, (np.array(pos)+0.03*z).tolist(), [0,0,1], 2, 0.5)
+    # 按法向力排序打印前 N 条
+    rows.sort(key=lambda r: r[3], reverse=True)
+    print("[contacts] top hits (linkA, bodyB, linkB, Fn, dist):")
+    for r in rows[:10]:
+        print(f"  {r[0]:>24s}  vs  body{r[1]}:link{r[2]:<2d}   Fn={r[3]:.4f}  dist={r[4]:.5f}")
 
 if __name__ == "__main__":
 
