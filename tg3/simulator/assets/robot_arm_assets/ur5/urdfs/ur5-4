@@ -363,7 +363,7 @@
     <axis
       xyz="0 -1 0" />
     <limit
-	  lower="-0.725"
+	  lower="0"
       upper="0.725"
       velocity="2.0"
       effort="1000" />
@@ -474,7 +474,7 @@
     <axis
       xyz="0 -1 0" />
     <limit
-      lower="-0.8757"
+      lower="0"
       upper="0.8757"
       velocity="2.0"
       effort="1000" />
@@ -536,7 +536,7 @@
     <axis
       xyz="0 -1 0" />
     <limit
-      lower="-0.8757"
+      lower="0"
       upper="0.8757"
       velocity="2.0"
       effort="1000" />
@@ -598,7 +598,7 @@
     <axis
       xyz="0 1 0" />
     <limit
-      lower="-0.8757"
+      lower="0"
       upper="0.8757"
       velocity="2.0"
       effort="1000" />
@@ -660,7 +660,7 @@
     <axis
       xyz="0 1 0" />
     <limit
-      lower="-0.857"
+      lower="0"
       upper="0.8757"
       velocity="2.0"
       effort="1000" />
@@ -722,7 +722,7 @@
     <axis
       xyz="0 1 0" />
     <limit
-      lower="-0.8757"
+      lower="0"
       upper="0.8757"
       velocity="2.0"
       effort="1000" />
@@ -814,7 +814,7 @@
   <parent link="left_inner_finger"/>
   <child  link="left_tactip_body_link"/>
   <!-- 这里相当于“指套底座”伸出去多远，按实际调 -->
-  <origin xyz="0.07 0 0.065" rpy="0 -1.57 0"/>
+  <origin xyz="0.05 0 0.065" rpy="0 -1.57 0"/>
 </joint>
 
 <!-- LEFT: tip -->
@@ -875,7 +875,7 @@
 <joint name="right_tactip_body_joint" type="fixed">
   <parent link="right_inner_finger"/>
   <child  link="right_tactip_body_link"/>
-  <origin xyz="0.07 0 0.065" rpy="0 -1.57 0"/>
+  <origin xyz="0.05 0 0.065" rpy="0 -1.57 0"/>
 </joint>
 
 <!-- RIGHT: tip -->
