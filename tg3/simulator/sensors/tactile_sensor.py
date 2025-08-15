@@ -164,7 +164,6 @@ class TactileSensor:
         Turn off collisions between sensor base and rest of the envs,
         useful for speed of training due to mininmising collisions
         """
-
         # turn off body collisions
         self._pb.setCollisionFilterGroupMask(self.embodiment_id, self.tactile_link_ids["body"], 0, 0)
 

@@ -138,18 +138,17 @@ def setup_pybullet_env(
     # 加载环境
     pb = connect_pybullet(timestep, show_gui)
     load_standard_environment(pb)
-
     # 加载stimulus
     if stim_path is None:
         stim_path = os.path.dirname(__file__)+'/stimuli'
     stim_urdf = os.path.join(stim_path, stim_name, stim_name+'.urdf')
     load_stim(pb, stim_urdf, np.array(stim_pose)/1e3, fixed_base=False, enable_collision=True)
 
-    # 加载target（可选）
+
     if load_target is not None:
         load_target_indicator(pb, load_target)
 
-    # **只传dict，不解包**
+
     embodiment = create_embodiment(
         pb,
         embodiment_type,
@@ -157,6 +156,7 @@ def setup_pybullet_env(
         tactile_sensor_params,
         visual_sensor_params
     )
+
     set_debug_camera(pb, visual_sensor_params)
     return pb, embodiment
 

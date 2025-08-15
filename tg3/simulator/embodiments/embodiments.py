@@ -66,6 +66,12 @@ class ArmEmbodiment:
         # get the link and tcp IDs
         self.tcp_link_id = self.link_name_to_index[self.tcp_link_name]
 
+        num_joints = self._pb.getNumJoints(self.embodiment_id)
+        all_link_indices = [-1] + list(range(num_joints))
+
+        for li in all_link_indices:
+            self._pb.setCollisionFilterGroupMask(self.embodiment_id, li, 0, 0)
+
     def create_link_joint_mappings(self, urdf_id):
 
         num_joints = self._pb.getNumJoints(urdf_id)
@@ -243,7 +249,7 @@ class TactileArmEmbodiment(ArmEmbodiment):
                 sensor_dynamics=params["dynamics"],
                 show_tactile=params["show_tactile"],
                 sensor_num=0 if finger == 'left' else 1,
-                body_link=params.get("body_link"),  # 如需手动指定再加
+                body_link=params.get("body_link"),
                 tip_link=params.get("tip_link"),
             )
 

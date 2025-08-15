@@ -93,7 +93,7 @@ def load_stim(pb, stim_name, stim_pose, fixed_base=False, enable_collision=True,
         stim_name,
         stim_pos,
         pb.getQuaternionFromEuler(stim_rpy),
-        useFixedBase=fixed_base,
+        useFixedBase=True,
         globalScaling=scale
     )
 
@@ -105,7 +105,7 @@ def load_stim(pb, stim_name, stim_pose, fixed_base=False, enable_collision=True,
     if not enable_collision:
         pb.setCollisionFilterGroupMask(stim_id, -1, 0, 0)
         return stim_id
-    p.changeDynamics(stim_id, -1, mass=0.005,
+    p.changeDynamics(stim_id, -1, mass=100,
                      lateralFriction=0.1,
                      rollingFriction=0.1,
                      spinningFriction=0.1
@@ -119,7 +119,7 @@ def load_target_indicator(pb, target_pose):
     target_pos, target_rpy = target_pose[:3], target_pose[3:]
     target_id = p.loadURDF(
         # add_assets_path("shared_assets/environment_objects/goal_indicators/sphere_indicator.urdf"),
-        add_assets_path(r"H:\tactile-gym-3-bowen\tg3\simulator\stimuli\cube\cube.urdf"),
+        add_assets_path(r"E:\ai\work\supwork\tactile-gym-3-keju\tg3\simulator\stimuli\cube\cube.urdf"),
         target_pos,
         pb.getQuaternionFromEuler(target_rpy),
         useFixedBase=True,

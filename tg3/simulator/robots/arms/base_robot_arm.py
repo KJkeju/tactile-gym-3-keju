@@ -356,8 +356,8 @@ class BaseRobotArm:
 
         # Warn user is correct pose was not reached within max steps
         if i == max_steps-1:
-            warnings.warn("Blocking position move failed to reach tolerance within max_steps.")
-
+            # warnings.warn("Blocking position move failed to reach tolerance within max_steps.")
+            pass
     def blocking_velocity_move(
         self,
         blocking_steps=100
@@ -394,7 +394,7 @@ class BaseRobotArm:
 
     def move_linear(self, targ_pose, quick_mode=False):
         self.set_target_tcp_pose(targ_pose)
-        self.apply_blocking_position_move(quick_mode=quick_mode)
+        self.apply_blocking_position_move(quick_mode=True)
 
     def move_linear_vel(self, targ_vels, blocking_steps=100):
         self.set_target_tcp_velocities(targ_vels)
