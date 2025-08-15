@@ -237,8 +237,24 @@ def tactile_pushing(args):
     robot.move_linear(np.array([0, 0, 160, 0, 0, 0]))
     spawn_stim_between_fingers(pb, embodiment, stim_name="long_edge_flat", z_offset=-0.02, use_tactip_tip=True)
 
-    # robot.move_linear(np.array([0, -100, 0, 0, 0, 0]))
+    # 生成的一个固定的带有碰撞的物块
+    pose6 = np.array([0.6,0.15,0.5,0,0,0,], dtype=float)
+    stim_urdf = add_assets_path(r"H:\tactile-gym-3-bowen\tg3\simulator\stimuli\cube\cube.urdf")
+    # 固定加载：fixed_base=True
+    fixed_cube_id = load_stim(pb, stim_urdf, pose6, fixed_base=True, enable_collision=True, scale=1.0)
 
+    # robot.move_linear(np.array([0, -100, 0, 0, 0, 0]))
+    pb.createConstraint(
+        parentBodyUniqueId=fixed_cube_id,
+        parentLinkIndex=-1,
+        childBodyUniqueId=-1,  # -1 表示世界
+        childLinkIndex=-1,
+        jointType=pb.JOINT_FIXED,
+        jointAxis=[0, 0, 0],
+        parentFramePosition=[0, 0, 0],
+        childFramePosition=pb.getBasePositionAndOrientation(fixed_cube_id)[0],
+        childFrameOrientation=pb.getBasePositionAndOrientation(fixed_cube_id)[1]
+    )
 
     # —— 在 pb, robot, sensor, embodiment 都就绪之后（spawn cube 之后也行）:
     # left_tip_id = embodiment.link_name_to_index["left_tactip_tip_link"]
