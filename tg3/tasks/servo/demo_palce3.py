@@ -170,6 +170,8 @@ def tactile_pushing(args):
     # robot, sensor = setup_environment(target_indicator)
     pb, robot, sensor = setup_environment(target_indicator, sensor_type=args.sensor)
     embodiment = sensor.embodiment
+    robot.controller.servo_mode = True
+    robot.controller.time_delay = 10
 
     robot.move_linear(np.array([0, 0, 0, 0, 0, 0]))
     disable_gripper_self_collision(pb, embodiment)
@@ -182,33 +184,70 @@ def tactile_pushing(args):
     stim_id, _ = spawn_pb_cube_between_fingers(pb, embodiment,
                                                edge_mm=80,  # 或你需要的尺寸
                                                z_offset=-0.01,
+
                                                use_tactip_tip=True)
+    contact_on = False
+    contact_cnt = 0
+
+    y0_ready = False
+    y0 = 0.0
+    y_hist = []
+
+    first_iter = True  # 第一次循环用来初始化低通的状态
 
     while True:
-
-        # stiffness2cube(stim_id)
+        # === 读触觉 → 组合误差 ===
         tactile_image_l, tactile_image_r = sensor.process()
         left_pre = pose_model.predict(tactile_image_l)
         right_pre = pose_model.predict(tactile_image_r)
         ob_pose = get_ob_pose(left_pre, right_pre)
-        print(ob_pose)
-        current_pose = robot.pose
 
-        if current_pose[2] < 160:
-            step = np.array([0, 0, 1, 0, 0, 0])
+        # === 提取姿态误差 ===
+        y_mm = float(ob_pose[1])  # 横向 (mm)
+        roll_deg = float(np.degrees(ob_pose[3]))
+        yaw_deg = float(np.degrees(ob_pose[5]))
+
+        # === 参数设定 ===
+        KY, Y_TOL, DY_MAX = 3.0, 0.15, 1.6
+        KPSI, PSI_MAX = 0.10, 1.5
+        Z_DOWN, Z_UP = +1.2, +1.2
+        ROLL_CONTACT, ROLL_HOLD = 80.0, 86.5
+
+        # === 状态判定 ===
+        roll_abs = abs(roll_deg)
+        if roll_abs > ROLL_HOLD:
+            contact_state = "deep"
+        elif roll_abs >= ROLL_CONTACT:
+            contact_state = "light"
         else:
-            align_ctrl, point_ctrl = create_controllers()
-            align = align_ctrl.update(np.array([0, ob_pose[3], 0, 0, 0, 0]), np.zeros(6))
-            print(align)
-            # for i in range(15):
-            #     current_pose = robot.pose
-            #     step = np.array([0, 0, -1, 0, 0, 0])
-            #     robot.move_linear(current_pose + step)
-            step = np.array([0, align[1], -2, 0, 0, 0])
+            contact_state = "air"
+
+        # === 垂直策略 ===
+        if contact_state == "air":
+            dz = -Z_DOWN
+        elif contact_state == "deep":
+            dz = +Z_UP
+        else:
+            dz = 0.0
+
+        # === 横移策略 ===
+        if contact_state != "air" and abs(y_mm) > Y_TOL:
+            dy = np.clip(KY * y_mm, -DY_MAX, DY_MAX)
+        else:
+            dy = 0.0
+
+        # === 偏航策略 ===
+        dpsi = float(np.clip(-KPSI * yaw_deg, -PSI_MAX, PSI_MAX))
+
+        # === 输出日志 ===
+        print(f"[ctrl] state={contact_state}  y={y_mm:.2f}mm  yaw={yaw_deg:.1f}°  roll={roll_deg:.1f}°"
+              f"  -> dy={dy:.2f}mm dz={dz:.2f}mm dpsi={dpsi:.1f}°")
+
+        # === 真正执行运动 ===
+        current_pose = robot.pose  # [x,y,z,Rx,Ry,Rz]
+        step = np.array([0, dy, dz, 0, 0, np.radians(dpsi)])
         next_pose = current_pose + step
         robot.move_linear(next_pose)
-
-
 
 
 def get_ob_pose(left, right):
@@ -656,6 +695,49 @@ def gripper_close_for_cube(pb, emb, cube_mm=80, squeeze_mm=2):
     print(f"[gripper_close] angle={np.rad2deg(a):.1f}deg  width={w*1000:.1f}mm")
     return a, w
 
+def compute_step_from_observation(y_mm, yaw_deg, roll_deg):
+    """
+    输入:
+        y_mm    : 目标块在传感器坐标系的横向误差(毫米)，目标是 0
+        yaw_deg : 当前偏航角(度)，目标是 0
+        roll_deg: 当前 roll(度)，用来判断“压得深不深”(取绝对值)
+    返回:
+        dy_mm   : 本次沿 y 的位移量(毫米，+右 -左)
+        dz_mm   : 本次沿 z 的位移量(毫米，>0 下压，<0 抬起)
+        dpsi_deg: 本次绕 z 的转角(度，+逆时针 -顺时针)
+    """
+    # ==== 可调参数 ====
+    KY = 3.0          # y 比例
+    Y_TOL = 0.15      # y 误差死区(mm)
+    DY_MAX = 1.6      # y 单步限幅(mm)
+
+    KPSI = 0.12       # 偏航比例
+    PSI_MAX = 2.0     # 偏航单步限幅(°)
+
+    Z_DOWN_STEP = 1.5     # 下压步长(mm)  —— 你的坐标系里：>0 是下压
+    Z_UP_STEP   = 1.5     # 回抬步长(mm)  —— <0 是抬起
+    ROLL_HI = 86.0        # 认为“压得太深”的阈值(|roll|>=此值就回抬)
+    ROLL_LO = 80.0        # 认为“接触太浅”的阈值(|roll|<=此值且还要横移就继续轻压)
+
+    # ==== y 方向 ====
+    if abs(y_mm) > Y_TOL:
+        dy = max(-DY_MAX, min(DY_MAX, -KY * y_mm))  # 往 0 拉
+    else:
+        dy = 0.0
+
+    # ==== 偏航 ====
+    dpsi = max(-PSI_MAX, min(PSI_MAX, -KPSI * yaw_deg))  # 往 0 拉
+
+    # ==== z 方向（门槛/相位） ====
+    roll_abs = abs(roll_deg)
+    if roll_abs >= ROLL_HI:
+        dz = -Z_UP_STEP               # 回抬（负号）
+    elif (roll_abs <= ROLL_LO) and (abs(y_mm) > Y_TOL):
+        dz = +Z_DOWN_STEP             # 需要横移且接触浅 -> 轻微下压
+    else:
+        dz = 0.0                      # 其他情况不动 z
+
+    return dy, dz, dpsi
 
 
 if __name__ == "__main__":
